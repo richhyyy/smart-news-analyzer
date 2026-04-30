@@ -1,5 +1,7 @@
 import nltk
+
 nltk.download('punkt')
+nltk.download('punkt_tab')
 import streamlit as st
 import feedparser
 import re
