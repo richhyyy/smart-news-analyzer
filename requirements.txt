@@ -1,4 +1,7 @@
 streamlit
 feedparser
-nltk
 textblob
+nltk
+transformers
+torch
+plotly
