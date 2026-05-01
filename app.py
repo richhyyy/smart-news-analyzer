@@ -2,38 +2,48 @@ import streamlit as st
 import feedparser
 import re
 from urllib.parse import urlparse
-from textblob import TextBlob
+
+import nltk
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+from nltk.tokenize import word_tokenize, sent_tokenize
 from collections import Counter
-import plotly.express as px
-from transformers import pipeline
-
-st.set_page_config(page_title="AI News Dashboard", layout="wide")
+import heapq
+from textblob import TextBlob
 
 
 # -------------------------------
-# AI MODEL
+# PAGE CONFIG
 # -------------------------------
-@st.cache_resource
-def load_model():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
-
-summarizer = load_model()
+st.set_page_config(page_title="Smart News Analyzer", layout="wide")
 
 
 # -------------------------------
-# CSS STYLING
+# SAFE PREMIUM UI (NO BREAKING EFFECTS)
 # -------------------------------
 st.markdown("""
-<style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 
-/* Background */
-body {
+<style>
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
     background-color: #0b0f19;
     color: white;
-    font-family: 'Inter', sans-serif;
 }
 
-/* TITLE (YOUR ADDED STYLE) */
+/* Soft glowing background (SAFE) */
+body {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(99,102,241,0.18), transparent 35%),
+        radial-gradient(circle at 85% 30%, rgba(14,165,233,0.14), transparent 40%),
+        radial-gradient(circle at 50% 85%, rgba(236,72,153,0.10), transparent 45%),
+        #0b0f19;
+}
+
 .title {
     text-align: center;
     font-size: 52px;
@@ -52,13 +62,28 @@ body {
     margin-bottom: 25px;
 }
 
-/* Cards */
+/* Input box */
+.stTextInput > div > div > input {
+    background-color: #111827;
+    color: white;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Card */
 .card {
     background: rgba(17, 24, 39, 0.75);
+    backdrop-filter: blur(10px);
     padding: 18px;
     border-radius: 14px;
     margin-bottom: 18px;
     border: 1px solid rgba(255,255,255,0.08);
+    transition: 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    border: 1px solid rgba(255,255,255,0.18);
 }
 
 /* Buttons */
@@ -67,20 +92,26 @@ body {
     color: white;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.1);
+    padding: 10px 18px;
+    font-weight: 500;
 }
 .stButton > button:hover {
     background-color: #374151;
 }
 
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #0f172a;
+}
 </style>
 """, unsafe_allow_html=True)
 
 
 # -------------------------------
-# HEADER (IMPORTANT)
+# HEADER
 # -------------------------------
 st.markdown("<div class='title'>Smart News Analyzer</div>", unsafe_allow_html=True)
-st.markdown("<div class='subtitle'>AI-powered news breakdown with insights ✨</div>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Clean AI-powered news breakdown </div>", unsafe_allow_html=True)
 
 
 # -------------------------------
@@ -91,47 +122,62 @@ def validate_url(url):
 
 
 def fetch_feed(url):
-    feed = feedparser.parse(url)
-    if not feed.entries:
-        return None, "No news found"
-    return feed, None
-
-
-def clean_text(text):
-    return re.sub(r'<[^>]+>', '', text or "")
-
-
-def ai_summary(text):
     try:
-        text = text[:1000]
-        return summarizer(text, max_length=80, min_length=30, do_sample=False)[0]["summary_text"]
-    except:
-        return "Summary not available"
+        feed = feedparser.parse(url)
+        if not feed.entries:
+            return None, "No entries found"
+        return feed, None
+    except Exception as e:
+        return None, str(e)
 
 
-def sentiment(text):
-    score = TextBlob(text).sentiment.polarity
-    if score > 0:
-        return "Positive"
-    elif score < 0:
-        return "Negative"
-    return "Neutral"
+def clean_html(text):
+    if not text:
+        return ""
+    return re.sub(r'<[^>]+>', '', text)
 
 
-def keywords(text):
-    words = re.findall(r'\w+', text.lower())
-    return Counter(words).most_common(5)
+# NLP FUNCTIONS
+def summarize_text(text, n=2):
+    sentences = sent_tokenize(text)
+    words = word_tokenize(text.lower())
+
+    freq = Counter(words)
+
+    scores = {}
+    for sent in sentences:
+        for word in word_tokenize(sent.lower()):
+            scores[sent] = scores.get(sent, 0) + freq.get(word, 0)
+
+    summary = heapq.nlargest(n, scores, key=scores.get)
+    return " ".join(summary)
 
 
-def category(text):
-    t = text.lower()
-    if "ai" in t or "tech" in t:
-        return "Tech"
-    if "stock" in t:
-        return "Finance"
-    if "cricket" in t:
+def extract_keywords(text, n=5):
+    words = word_tokenize(text.lower())
+    words = [w for w in words if w.isalnum()]
+    freq = Counter(words)
+    return [w for w, _ in freq.most_common(n)]
+
+
+def get_sentiment(text):
+    polarity = TextBlob(text).sentiment.polarity
+    if polarity > 0:
+        return "🟢 Positive"
+    elif polarity < 0:
+        return "🔴 Negative"
+    return "🟡 Neutral"
+
+
+def detect_category(text):
+    text = text.lower()
+    if "cricket" in text:
         return "Sports"
-    if "politics" in t:
+    elif "ai" in text or "technology" in text:
+        return "Tech"
+    elif "market" in text:
+        return "Finance"
+    elif "election" in text:
         return "Politics"
     return "General"
 
@@ -139,73 +185,60 @@ def category(text):
 # -------------------------------
 # INPUT
 # -------------------------------
-url = st.text_input("Enter RSS Feed URL")
-num = st.slider("Articles", 1, 10, 5)
+url = st.text_input("Paste RSS Feed URL")
+
+st.sidebar.header("Controls")
+num_articles = st.sidebar.slider("Articles", 1, 10, 5)
 
 
 # -------------------------------
-# RUN
+# RUN BUTTON
 # -------------------------------
 if st.button("Analyze") and url:
 
     if not validate_url(url):
         st.error("Invalid URL")
     else:
-        feed, error = fetch_feed(url)
+        with st.spinner("Analyzing news..."):
+            feed, error = fetch_feed(url)
 
-        if error:
-            st.error(error)
-        else:
+            if error:
+                st.error(error)
+            else:
+                for entry in feed.entries[:num_articles]:
 
-            sentiments = []
-            categories = []
+                    st.markdown("<div class='card'>", unsafe_allow_html=True)
+                    st.subheader(entry.title)
 
-            for entry in feed.entries[:num]:
+                    description = ""
+                    if hasattr(entry, 'summary'):
+                        description = entry.summary
+                    elif hasattr(entry, 'description'):
+                        description = entry.description
 
-                title = entry.title
-                desc = clean_text(getattr(entry, "summary", ""))
+                    if description:
+                        description = clean_html(description)
 
-                summary = ai_summary(desc)
-                s = sentiment(desc)
-                c = category(desc)
-                k = keywords(desc)
+                        summary = summarize_text(description)
+                        keywords = extract_keywords(description)
+                        sentiment = get_sentiment(description)
+                        category = detect_category(description)
 
-                sentiments.append(s)
-                categories.append(c)
+                        col1, col2 = st.columns(2)
 
-                st.markdown("<div class='card'>", unsafe_allow_html=True)
-                st.subheader(title)
+                        with col1:
+                            st.markdown("###  Summary")
+                            st.write(summary)
+                            st.markdown("###  Sentiment")
+                            st.write(sentiment)
 
-                st.write(" Summary:", summary)
-                st.write(" Sentiment:", s)
-                st.write("Category:", c)
-                st.write(" Keywords:", k)
+                        with col2:
+                            st.markdown("###  Keywords")
+                            st.write(", ".join(keywords))
+                            st.markdown("###  Category")
+                            st.write(category)
 
-                if hasattr(entry, "link"):
-                    st.markdown(f"[Read More]({entry.link})")
+                    if hasattr(entry, 'link'):
+                        st.markdown(f"[🔗 Read Full Article]({entry.link})")
 
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            # -------------------------------
-            # DASHBOARD
-            # -------------------------------
-            st.subheader("📊 Analytics Dashboard")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                fig = px.pie(
-                    names=list(Counter(sentiments).keys()),
-                    values=list(Counter(sentiments).values()),
-                    title="Sentiment Distribution"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-            with col2:
-                fig = px.bar(
-                    x=list(Counter(categories).keys()),
-                    y=list(Counter(categories).values()),
-                    title="Category Distribution"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
+                    st.markdown("</div>", unsafe_allow_html=True)
