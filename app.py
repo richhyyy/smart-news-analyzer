@@ -1,11 +1,11 @@
-import nltk
-
-nltk.download('punkt')
-nltk.download('punkt_tab')
 import streamlit as st
 import feedparser
 import re
 from urllib.parse import urlparse
+
+import nltk
+nltk.download('punkt')
+nltk.download('punkt_tab')
 
 from nltk.tokenize import word_tokenize, sent_tokenize
 from collections import Counter
@@ -14,15 +14,43 @@ from textblob import TextBlob
 
 
 # -------------------------------
-# URL Validation
+# PAGE CONFIG
+# -------------------------------
+st.set_page_config(page_title="Smart News Analyzer", layout="wide")
+
+
+# -------------------------------
+# CUSTOM CSS (Premium look)
+# -------------------------------
+st.markdown("""
+<style>
+.main {
+    background-color: #0E1117;
+}
+.block-container {
+    padding-top: 2rem;
+}
+h1 {
+    font-weight: 700;
+}
+.card {
+    background-color: #161B22;
+    padding: 20px;
+    border-radius: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 0 10px rgba(124, 58, 237, 0.3);
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# -------------------------------
+# FUNCTIONS
 # -------------------------------
 def validate_url(url):
     return url.startswith(("http://", "https://")) and urlparse(url).netloc
 
 
-# -------------------------------
-# Fetch RSS Feed
-# -------------------------------
 def fetch_feed(url):
     try:
         feed = feedparser.parse(url)
@@ -33,9 +61,6 @@ def fetch_feed(url):
         return None, str(e)
 
 
-# -------------------------------
-# Clean HTML
-# -------------------------------
 def clean_html(text):
     if not text:
         return ""
@@ -43,13 +68,10 @@ def clean_html(text):
     return text.replace('&amp;', '&').strip()
 
 
-# -------------------------------
-# NLP FUNCTIONS
-# -------------------------------
+# NLP
 def summarize_text(text, n=2):
     sentences = sent_tokenize(text)
     words = word_tokenize(text.lower())
-
     freq = Counter(words)
 
     scores = {}
@@ -92,48 +114,67 @@ def detect_category(text):
 
 
 # -------------------------------
-# UI
+# UI HEADER
 # -------------------------------
-st.set_page_config(page_title="Smart News Analyzer", layout="wide")
+st.title("Smart News Analyzer")
+st.caption("AI-powered insights from live news feeds")
 
-st.title("🧠 NLP-Based Smart News Analyzer")
-st.write("Analyze news articles using NLP (Summary, Keywords, Sentiment)")
 
-url = st.text_input("Enter RSS Feed URL")
+# Sidebar
+st.sidebar.header("Controls")
+num_articles = st.sidebar.slider("Articles", 1, 10, 5)
 
-num_articles = st.slider("Number of articles", 1, 10, 5)
+# Input
+url = st.text_input("🔗 Enter RSS Feed URL")
 
-if st.button("Analyze News"):
+# Button
+if st.button("Analyze"):
     if not validate_url(url):
         st.error("Invalid URL")
     else:
-        feed, error = fetch_feed(url)
+        with st.spinner("Analyzing news..."):
+            feed, error = fetch_feed(url)
 
-        if error:
-            st.error(error)
-        else:
-            for entry in feed.entries[:num_articles]:
-                st.markdown("---")
-                st.subheader(entry.title)
+            if error:
+                st.error(error)
+            else:
+                for entry in feed.entries[:num_articles]:
+                    st.markdown("---")
+                    st.subheader(entry.title)
 
-                description = ""
-                if hasattr(entry, 'summary'):
-                    description = entry.summary
-                elif hasattr(entry, 'description'):
-                    description = entry.description
+                    description = ""
+                    if hasattr(entry, 'summary'):
+                        description = entry.summary
+                    elif hasattr(entry, 'description'):
+                        description = entry.description
 
-                if description:
-                    description = clean_html(description)
+                    if description:
+                        description = clean_html(description)
 
-                    summary = summarize_text(description)
-                    keywords = extract_keywords(description)
-                    sentiment = get_sentiment(description)
-                    category = detect_category(description)
+                        summary = summarize_text(description)
+                        keywords = extract_keywords(description)
+                        sentiment = get_sentiment(description)
+                        category = detect_category(description)
 
-                    st.write("🧠 **Summary:**", summary)
-                    st.write("🔑 **Keywords:**", keywords)
-                    st.write("😊 **Sentiment:**", sentiment)
-                    st.write("📂 **Category:**", category)
+                        st.markdown('<div class="card">', unsafe_allow_html=True)
 
-                if hasattr(entry, 'link'):
-                    st.markdown(f"[🔗 Read Full Article]({entry.link})")
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown("### Summary")
+                            st.write(summary)
+
+                            st.markdown("###  Sentiment")
+                            st.write(sentiment)
+
+                        with col2:
+                            st.markdown("###  Keywords")
+                            st.write(", ".join(keywords))
+
+                            st.markdown("###  Category")
+                            st.write(category)
+
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                    if hasattr(entry, 'link'):
+                        st.markdown(f"[🔗 Read Full Article]({entry.link}")

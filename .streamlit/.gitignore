@@ -1,0 +1,13 @@
+# Ignore big/unnecessary files
+*.zip
+*.exe
+*.msi
+
+# Ignore system / env
+.venv/
+__pycache__/
+*.pyc
+
+# Ignore random installers
+jdk*
+xampp*
